@@ -223,4 +223,5 @@ __marimo__/
 .cursor/
 
 packages/
+rundir/
 

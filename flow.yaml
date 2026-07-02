@@ -2,3 +2,16 @@
 package:
   name: fw-wb-dma
 
+  imports:
+  - ${{ env.IVPM_PACKAGES }}/fw-hdl            # package fw-hdl (fw_hdl_pkg + fw_std_pkg/fw_mem_if)
+  - ${{ env.IVPM_PACKAGES }}/fw-proto-wb       # package fw.proto.wb (Wishbone transactors + adapters)
+  - ${{ env.IVPM_PACKAGES }}/fw-proto-gpio     # package fw.proto.gpio (GPIO transactors)
+  - ${{ env.IVPM_PACKAGES }}/fwvip-gpio        # package org.fwvip.gpio (GPIO UVM VIP)
+
+  fragments:
+  - src/spl/flow.yaml
+  - src/rtl/flow.yaml
+  - tests/smoke/flow.yaml
+  - tests/uvm/flow.yaml
+  - tests/perf/flow.yaml
+  - tests/wb_smoke/flow.yaml

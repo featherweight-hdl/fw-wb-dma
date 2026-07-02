@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://dv-flow.github.io/flow.dv.schema.json
+fragment:
+  # Performance benchmark for the SPL DMA engine core (no Wishbone transactors,
+  # no UVM): the engine wired to dense std_mem_if memories, looping large block
+  # copies. `needs` the SPL FileSet (fw-wb-dma.spl).
+  tasks:
+  - name: perf-tb
+    uses: std.FileSet
+    with:
+      type: systemVerilogSource
+      include:
+      - wb_dma_perf_tb.sv
+      incdirs:
+      - .
+
+  - name: perf-img
+    uses: hdlsim.vlt.SimImage
+    needs: [spl, perf-tb]
+    with:
+      top: [wb_dma_perf_tb]
+
+  - root: perf
+    uses: hdlsim.vlt.SimRun
+    needs: [perf-img]

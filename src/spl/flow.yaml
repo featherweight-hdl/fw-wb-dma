@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://dv-flow.github.io/flow.dv.schema.json
+fragment:
+  # Behavioral (class-based) DMA model. The core model speaks only the protocol-
+  # independent fw_mem_if edge, so it depends on the fw modeling library ONLY
+  # (fw-hdl.hdl.sv-src carries fw_hdl_pkg + fw_std_pkg where fw_mem_if lives). No
+  # Wishbone dependency here -- that enters only at the wb_dma_spl wrapper (below).
+  # incdir '.' picks up the .svh includes (macros, API classes, model components).
+  tasks:
+  - export: spl
+    uses: std.FileSet
+    needs: [fw-hdl.hdl.sv-src]
+    with:
+      type: systemVerilogSource
+      include:
+      - wb_dma_spl_pkg.sv
+      incdirs:
+      - .
+
+  # Signal-level wrapper: the wb_dma_spl module (ports identical to the OpenCores
+  # wb_dma_top) instances the fw-proto-wb Wishbone transactors + fw_mem_if
+  # adapters and roots the class model. Depends on the core model plus the whole
+  # Wishbone kit (transactor modules + fw_proto_wb_pkg adapters).
+  - export: spl-wb
+    uses: std.FileSet
+    needs: [spl, fw.proto.wb.files]
+    with:
+      type: systemVerilogSource
+      include:
+      - wb_dma_spl.sv
+      incdirs:
+      - .

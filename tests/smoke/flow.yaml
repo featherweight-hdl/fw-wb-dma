@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://dv-flow.github.io/flow.dv.schema.json
+fragment:
+  # Phase-1 smoke test for the SPL class model: elaborates wb_dma and runs an
+  # 8-word block copy over the protocol-independent std_mem_if edge (no Wishbone
+  # transactors). `needs` the SPL FileSet (fw-wb-dma.spl), which transitively
+  # carries wb.proto.files (std_mem_if) and the fw modeling library.
+  tasks:
+  - name: smoke-tb
+    uses: std.FileSet
+    with:
+      type: systemVerilogSource
+      include:
+      - wb_dma_smoke_tb.sv
+      incdirs:
+      - .
+
+  - name: smoke-img
+    uses: hdlsim.vlt.SimImage
+    needs: [spl, smoke-tb]
+    with:
+      top: [wb_dma_smoke_tb]
+
+  - root: smoke
+    uses: hdlsim.vlt.SimRun
+    needs: [smoke-img]

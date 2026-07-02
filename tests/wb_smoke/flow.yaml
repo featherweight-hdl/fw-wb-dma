@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://dv-flow.github.io/flow.dv.schema.json
+fragment:
+  # Wishbone-level smoke test for the wb_dma_spl wrapper: an external WB initiator
+  # programs the DMA via the WB0 slave port, two WB memory slaves back the WB0/WB1
+  # master ports, and the test runs an 8-word block copy through actual Wishbone
+  # pins. `needs` the wrapper FileSet (fw-wb-dma.spl-wb), which carries the model +
+  # the Wishbone kit (transactors + adapters).
+  tasks:
+  - name: wb-smoke-tb
+    uses: std.FileSet
+    with:
+      type: systemVerilogSource
+      include:
+      - wb_dma_spl_wb_tb.sv
+      incdirs:
+      - .
+
+  - name: wb-smoke-img
+    uses: hdlsim.vlt.SimImage
+    needs: [spl-wb, wb-smoke-tb]
+    with:
+      top: [wb_dma_spl_wb_tb]
+
+  - root: wb-smoke
+    uses: hdlsim.vlt.SimRun
+    needs: [wb-smoke-img]
