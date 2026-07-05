@@ -9,7 +9,7 @@ fragment:
     uses: std.FileSet
     with:
       type: systemVerilogSource
-      base: ../../packages/wb_dma/rtl/verilog
+      base: "${{ env.IVPM_PACKAGES }}/wb_dma/rtl/verilog"
       incdirs:
       - .
       include:

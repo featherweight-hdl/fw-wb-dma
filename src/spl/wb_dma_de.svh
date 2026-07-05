@@ -22,18 +22,21 @@
 // lowers to RTL (the set's event is the OR of its members' fired pulses, and the
 // wait site is a process sensitive to it).
 //
-// The engine speaks fw_mem_if (read/write), never Wishbone; the bus protocol is
-// supplied by adapters/transactors at the module boundary.
+// The engine speaks the Wishbone access API (wb_proto_if) on its master ports;
+// the signal-level transactors at the module boundary bridge that to WB pins.
 class wb_dma_de extends fw_component implements fw_runnable;
     wb_dma_rf         rf;
     wb_dma_hs_if      m_hs[];     // resolved per-channel HS handles (null = unconnected)
-    fw_event_set      m_wake;     // re-arbitrate: a watched CSR write OR an HS request
     int unsigned      last_ch;    // round-robin pointer (last channel serviced)
 
     // Edge ports.
-    fw_port #(fw_mem_if #(logic [31:0], logic [31:0], logic [3:0])) mif0, mif1;   // WISHBONE IF0 / IF1 masters (data)
+    fw_port #(wb_proto_if #(32, 32)) mif0, mif1;   // WISHBONE IF0 / IF1 masters (data)
     fw_port #(wb_dma_irq_if)  irq;          // interrupt-cause sink
     fw_port #(wb_dma_hs_if)   hs[];         // per-channel HW handshake
+
+    // `fw_component_type_begin(wb_dma_de)
+    // `fw_component_type_end
+
 
     function new(string name, fw_component parent, wb_dma_rf rf);
         super.new(name, parent);
@@ -53,9 +56,14 @@ class wb_dma_de extends fw_component implements fw_runnable;
 
     // ---- service loop --------------------------------------------------------
     virtual task run();
-        fw_mem_if #(logic [31:0], logic [31:0], logic [3:0]) if0 = mif0.get_if();
-        fw_mem_if #(logic [31:0], logic [31:0], logic [3:0]) if1 = mif1.get_if();
-        wb_dma_irq_if  irqif = irq.get_if();
+        wb_proto_if #(32, 32) if0 = mif0.get_if();
+        wb_proto_if #(32, 32) if1 = mif1.get_if();
+        fw_event_set      m_wake;     // re-arbitrate: a watched CSR write OR an HS request
+
+        // de.irq is an OPTIONAL cause seam (like the hs[] ports): resolve it only
+        // when a scoreboard is connected; raise() null-guards it. The interrupt
+        // LEVELS do not depend on it -- they flow through rf.raise_int below.
+        wb_dma_irq_if  irqif = irq.is_connected() ? irq.get_if() : null;
 
         // Collect the heterogeneous wait list -- every CSR plus every connected HS
         // port -- into the wake set. Each entry is just an fw_awaitable_if; the loop
@@ -68,14 +76,21 @@ class wb_dma_de extends fw_component implements fw_runnable;
             m_wake.add(m_hs[i]);
         end
 
+        // `fw_trace_loop_begin("service")           // one iteration per arbitration round
         forever begin
             automatic int c = next();
+            // `fw_trace_point_begin("arb")          // outcome of this round
+              // `fw_trace_param_int(c)              //   winner (-1 == nothing ready)
+              // `fw_trace_param_int(last_ch)        //   round-robin pointer
+              // `fw_trace_cond("paused", rf.paused())
+            // `fw_trace_point_end
             if (c < 0) begin
                 m_wake.wait_any();           // sleep until a CSR write or an HS request
                 continue;
             end
             service_chunk(c, if0, if1, irqif);
         end
+        // `fw_trace_loop_end("service")
     endtask
 
     // ---- register-centric arbitration (spec §3.1) ----------------------------
@@ -98,6 +113,9 @@ class wb_dma_de extends fw_component implements fw_runnable;
     local function int next();
         int n = rf.n_ch;
         int best_pri = -1;
+
+        // `fw_trace_enter("next")
+
         if (rf.paused()) return -1;
         foreach (rf.ch[i])
             if (ready(i) && prio_of(i) > best_pri)
@@ -107,22 +125,33 @@ class wb_dma_de extends fw_component implements fw_runnable;
             int idx = (last_ch + k) % n;
             if (ready(idx) && prio_of(idx) == best_pri) begin
                 last_ch = idx;
+                // `fw_trace_leave_begin("next")
+                  // `fw_trace_return_int(idx)
+                // `fw_trace_leave_end
                 return idx;
             end
         end
+
+        // `fw_trace_leave_begin("next")
+          // `fw_trace_return_int(-1)
+        // `fw_trace_leave_end
         return -1;
     endfunction
 
     // Transfer one chunk of channel c (CHK_SZ words, or all of TOT_SZ when
     // CHK_SZ==0), then settle the channel (chunk-int / done / ARS / error).
     local task automatic service_chunk(int c,
-                                       fw_mem_if #(logic [31:0], logic [31:0], logic [3:0]) if0, fw_mem_if #(logic [31:0], logic [31:0], logic [3:0]) if1,
+                                       wb_proto_if #(32, 32) if0, wb_proto_if #(32, 32) if1,
                                        wb_dma_irq_if irqif);
         wb_dma_ch    ch  = rf.ch[c];
         wb_dma_csr_t csr = ch.regs.csr.read();           // config snapshot for this chunk
         wb_dma_sz_t  sz  = ch.regs.sz.read();
         automatic bit nd = 0, rest = 0;
         automatic int n;
+
+        // `fw_trace_enter_begin("service_chunk")
+          // `fw_trace_param_int(c)
+        // `fw_trace_enter_end
 
         // HW-handshake mode: consume the chunk request the arbiter gated on (it is
         // already pending -- ready() required has_req() -- so wait_req returns at
@@ -135,24 +164,45 @@ class wb_dma_de extends fw_component implements fw_runnable;
         n = (sz.chk_sz == 0) ? ch.w_rem : min2(int'(sz.chk_sz), ch.w_rem);
         ch.set_busy(1'b1);
 
+        // `fw_trace_point_begin("plan")                 // chunk parameters, resolved
+          // `fw_trace_param_int(n)                      //   words this chunk will move
+          // `fw_trace_param_uint(sz.chk_sz)             //   CHK_SZ (0 == whole transfer)
+          // `fw_trace_param_uint(ch.w_rem)              //   words left before this chunk
+          // `fw_trace_cond("hs_mode", csr.mode)         //   SW (0) vs HW-handshake (1)
+        // `fw_trace_point_end
+
+        // `fw_trace_loop_begin("xfer")                  // one iteration per word moved
         for (int i = 0; i < n; i++) begin
             automatic bit [31:0] data;
             automatic bit        berr;
-            if (swptr_stall(ch)) break;                  // FIFO: stop at software ptr (§3.5)
+            if (swptr_stall(ch)) begin
+                // `fw_trace_cond("swptr_stall", 1'b1)   // FIFO backpressure (§3.5)
+                break;                                // stop at software ptr
+            end
             begin
-                fw_mem_if #(logic [31:0], logic [31:0], logic [3:0]) src = csr.src_sel ? if1 : if0;
-                fw_mem_if #(logic [31:0], logic [31:0], logic [3:0]) dst = csr.dst_sel ? if1 : if0;
-                src.read(data, berr, ch.w_src);
-                if (berr) begin fail(ch, irqif); return; end
-                dst.write(berr, ch.w_dst, data, 4'hf);
-                if (berr) begin fail(ch, irqif); return; end
+                automatic bit [31:0] wdr;   // write response data (ignored)
+                wb_proto_if #(32, 32) src = csr.src_sel ? if1 : if0;
+                wb_proto_if #(32, 32) dst = csr.dst_sel ? if1 : if0;
+                // `fw_trace_point_begin("word")         // per-beat working state
+                  // `fw_trace_param_int(i)
+                  // `fw_trace_param_uint(ch.w_src)      //   source address this beat
+                  // `fw_trace_param_uint(ch.w_dst)      //   dest address this beat
+                // `fw_trace_point_end
+                src.access(ch.w_src, 32'h0, 4'hf, 1'b0, data, berr);   // read
+                if (berr) begin /* `fw_trace_cond("berr_rd", 1'b1) */ fail(ch, irqif); return; end
+                dst.access(ch.w_dst, data, 4'hf, 1'b1, wdr, berr);     // write
+                if (berr) begin /* `fw_trace_cond("berr_wr", 1'b1) */ fail(ch, irqif); return; end
             end
             if (csr.inc_src) ch.advance_src();
             if (csr.inc_dst) ch.advance_dst();
             ch.w_rem--;
             // STOP is host-writable mid-transfer, so read it fresh (§4.4.1).
-            if (ch.regs.csr.read().stop) begin fail(ch, irqif); return; end
+            if (ch.regs.csr.read().stop) begin
+                // `fw_trace_cond("host_stop", 1'b1)
+                fail(ch, irqif); return;
+            end
         end
+        // `fw_trace_loop_end("xfer")
 
         if (csr.mode) begin
             m_hs[c].ack();                               // acknowledge the chunk (§3.8)
@@ -161,18 +211,27 @@ class wb_dma_de extends fw_component implements fw_runnable;
         // More chunks remain in this transfer: optional chunk interrupt, then
         // re-arbitrate (return to the loop).
         if (sz.chk_sz != 0 && ch.w_rem != 0) begin
+            // `fw_trace_point_begin("chunk_more")          // chunk boundary, transfer continues
+              // `fw_trace_param_uint(ch.w_rem)
+              // `fw_trace_cond("int", csr.ine_chk_done)
+            // `fw_trace_point_end
             if (csr.ine_chk_done) raise(ch, c, CAUSE_CHUNK, irqif);
             return;
         end
 
         // TOT_SZ exhausted -> transfer complete. ARS is capability-gated (App. A).
         if ((ch.cap_ars & csr.ars) && !ch.regs.csr.read().stop) begin
-            ch.load_working();                           // auto-restart (§3.2.1)
+            // `fw_trace_cond("auto_restart", 1'b1)         // ARS: reload and keep going (§3.2.1)
+            ch.load_working();
         end else begin
             ch.set_busy(1'b0); ch.set_done(1'b1);
             ch.clr_en();                                 // HW clears CH_EN on done
+            // `fw_trace_cond("done", 1'b1)                 // transfer complete
             if (csr.ine_done) raise(ch, c, CAUSE_DONE, irqif);
         end
+
+        // `fw_trace_leave("service_chunk");
+
     endtask
 
     // Abort the channel with an error (bus error or host STOP).
@@ -192,8 +251,9 @@ class wb_dma_de extends fw_component implements fw_runnable;
             CAUSE_ERR:   ch.set_int_err();
             default: ;
         endcase
-        rf.raise_int(c);
-        irqif.raise('{channel: c[4:0], cause: cause});
+        rf.raise_int(c);                                 // moves the level (rf int seam)
+        if (irqif != null)                               // publish the cause (optional sink)
+            irqif.raise('{channel: c[4:0], cause: cause});
     endtask
 
     // FIFO software-pointer stall (§3.5): the address bound for IF0 may not cross

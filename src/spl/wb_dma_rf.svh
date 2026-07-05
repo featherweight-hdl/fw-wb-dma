@@ -64,8 +64,9 @@ class wb_dma_rf extends fw_component;
     wb_dma_int_if   m_int_sinks[$];
     local bit [1:0] m_last_int;        // {intb, inta} last published
 
-    // Provided host port: write()/read() redirect to host_write()/host_read().
-    `FW_MEM_IMP(logic [31:0], logic [31:0], logic [3:0], wb_dma_rf, host);
+    // Provided host port: the Wishbone access() seam redirects to host_access(),
+    // which dispatches to the register-block host_write()/host_read() helpers.
+    `FW_WB_PROTO_IMP(32, 32, wb_dma_rf, host);
 
     function new(string name, fw_component parent, int unsigned n_ch = 4);
         super.new(name, parent);
@@ -121,7 +122,19 @@ class wb_dma_rf extends fw_component;
             c.arm();
     endtask
 
-    // ---- fw_mem_if provider implementation (outputs lead) -------------------
+    // ---- wb_proto_if provider implementation --------------------------------
+    // access() dispatches to the register-block write/read helpers below (kept
+    // intact so the synthesizable register model is unchanged -- only the bus
+    // BOUNDARY moves from fw_mem_if read/write to the Wishbone access() seam).
+    virtual task host_access(input  logic [31:0] adr, input logic [31:0] dat_w,
+                             input  logic [3:0]  sel, input bit          we,
+                             output logic [31:0] dat_r, output bit        err);
+        automatic bit e;
+        if (we) begin host_write(e, adr, dat_w, sel); dat_r = 32'h0; end
+        else          host_read(dat_r, e, adr);
+        err = e;
+    endtask
+
     // The bus access routes through the register block (offset decode + register
     // semantics); only the derived INT_SRC views are special-cased.
     virtual task host_write(output bit err, input logic [31:0] addr,

@@ -23,6 +23,7 @@ module wb_dma_spl_wb_tb;
     localparam int          NW  = 8;
 
     // Channel-0 register offsets (rf decode: 0x20 base, 0x20 stride/channel).
+    localparam logic [31:0] INT_MSK_A = 32'h04;  // interrupt mask / routing bank A
     localparam logic [31:0] CH0_CSR  = 32'h20;
     localparam logic [31:0] CH0_SZ   = 32'h24;
     localparam logic [31:0] CH0_ADR0 = 32'h28;   // source
@@ -58,6 +59,13 @@ module wb_dma_spl_wb_tb;
 
     wire        inta, intb;
     wire [3:0]  dma_ack;
+
+    // Observe the interrupt outputs. Beyond being realistic bench behavior, this
+    // read keeps the DUT's interrupt GPIO initiators live: an output driven by a
+    // (virtual-interface-backed) transactor but left unread by the bench is pruned
+    // by Verilator's dead-code elimination, which then trips on the dangling vif.
+    always @(posedge clk) if (!rst && (inta || intb))
+        $display("[wb_dma_spl_wb] irq: inta=%b intb=%b @ %0t", inta, intb, $time);
 
     // ---- DUT -----------------------------------------------------------------
     wb_dma_spl #(.ch_count(4)) dut (
@@ -142,15 +150,27 @@ module wb_dma_spl_wb_tb;
         wr(CH0_ADR0, SRC);
         wr(CH0_ADR1, DST);
         wr(CH0_SZ,   NW);                                     // chk_sz=0 => whole TOT_SZ
+        // Route channel 0's done interrupt to inta_o (INT_MSK_A bit 0), so the
+        // transfer's completion drives the model's interrupt-propagation path.
+        wr(INT_MSK_A, 32'h1);
         // CSR: ch_en(0) | inc_dst(3) | inc_src(4) | ine_done(18)
         wr(CH0_CSR, (1<<0)|(1<<3)|(1<<4)|(1<<18));
 
-        // Poll for DONE (CSR bit 11).
+        // The done interrupt IS the completion signal: wait for inta_o to assert.
+        // This exercises the interrupt-propagation block (source SET -> aggregate
+        // |(INT_SRC & INT_MSK_A) -> gpio_drive_if -> inta_o).
         for (int t = 0; t < 4000; t++) begin
-            rd(CH0_CSR, csr);
-            if (csr[11]) break;
+            if (inta) break;
+            @(posedge clk);
         end
+        if (!inta) begin $display("FAIL: inta never asserted on done"); errors++; end
+
+        // Confirm DONE and clear the pending source. Reading the channel CSR is the
+        // documented read-to-clear, which must DEASSERT inta_o via the same path.
+        rd(CH0_CSR, csr);
         if (!csr[11]) begin $display("FAIL: channel never completed"); errors++; end
+        repeat (10) @(posedge clk);
+        if (inta) begin $display("FAIL: inta stuck high after CSR read-clear"); errors++; end
 
         // Check the destination buffer in mem0.
         for (int i = 0; i < NW; i++) begin

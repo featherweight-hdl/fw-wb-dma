@@ -148,14 +148,16 @@ activemq-data/
 *.sage.py
 
 # Environments
+# Anchor the venv dir names to the repo root so they don't shadow HDL source
+# directories that happen to be named env/ (e.g. tests/uvm/env/).
 .env
 .envrc
 .venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+/env/
+/venv/
+/ENV/
+/env.bak/
+/venv.bak/
 
 # Spyder project settings
 .spyderproject

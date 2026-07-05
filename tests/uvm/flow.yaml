@@ -9,11 +9,13 @@ fragment:
   tasks:
   - name: uvm-env-src
     uses: std.FileSet
-    needs: [spl]
+    # wb_dma_uvm_pkg imports fwvip_wb_pkg (the reg-access agent). Pull the fwvip-wb
+    # UVM source; it is ordered after SimLibUVM via each image's needs list.
+    needs: [spl, org.fwvip.wb.vip-uvm-hvlsrc]
     with:
       type: systemVerilogSource
       base: env
-      incdirs: ["."]
+      incdirs: [".", "env"]      # 'env' so the per-class .svh includes resolve
       include:
       - wb_dma_model_pkg.sv
       - wb_dma_uvm_pkg.sv
@@ -24,7 +26,7 @@ fragment:
     with:
       type: systemVerilogSource
       base: tests
-      incdirs: ["."]
+      incdirs: [".", "tests"]    # 'tests' so the per-class .svh includes resolve
       include:
       - wb_dma_tests_pkg.sv
 
@@ -35,7 +37,7 @@ fragment:
       type: systemVerilogSource
       base: tb
       incdirs: ["."]
-      include: [hvl_top_spl.sv]
+      include: [hdl_top_spl.sv, hvl_top_spl.sv]
 
   - name: uvm-img
     uses: hdlsim.vlt.SimImage
@@ -52,7 +54,7 @@ fragment:
     with:
       type: systemVerilogSource
       base: env
-      incdirs: ["."]
+      incdirs: [".", "env"]      # 'env' so the per-class .svh includes resolve
       include:
       - wb_dma_wb_model_pkg.sv
 
@@ -63,7 +65,7 @@ fragment:
       type: systemVerilogSource
       base: tb
       incdirs: ["."]
-      include: [hvl_top_spl_wb.sv]
+      include: [hdl_top_spl_wb.sv, hvl_top_spl_wb.sv]
 
   - name: uvm-wb-img
     uses: hdlsim.vlt.SimImage
@@ -105,7 +107,7 @@ fragment:
     with:
       type: systemVerilogSource
       base: env
-      incdirs: ["."]
+      incdirs: [".", "env"]      # 'env' so the per-class .svh includes resolve
       include: [wb_dma_rtl_model_pkg.sv]
 
   - name: uvm-rtl-tb-src
@@ -115,7 +117,7 @@ fragment:
       type: systemVerilogSource
       base: tb
       incdirs: ["."]
-      include: [hvl_top_rtl.sv]
+      include: [hdl_top_rtl.sv, hvl_top_rtl.sv]
 
   - name: uvm-rtl-img
     uses: hdlsim.vlt.SimImage
