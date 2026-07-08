@@ -1,6 +1,10 @@
 # yaml-language-server: $schema=https://dv-flow.github.io/flow.dv.schema.json
 package:
   name: fw-wb-dma
+  with:
+    sim:
+      type: str 
+      value: vlt
 
   imports:
   - ${{ env.IVPM_PACKAGES }}/fw-hdl            # package fw-hdl (fw_hdl_pkg + fw_std_pkg/fw_mem_if)

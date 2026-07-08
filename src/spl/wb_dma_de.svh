@@ -28,6 +28,12 @@ class wb_dma_de extends fw_component implements fw_runnable;
     wb_dma_rf         rf;
     wb_dma_hs_if      m_hs[];     // resolved per-channel HS handles (null = unconnected)
     int unsigned      last_ch;    // round-robin pointer (last channel serviced)
+    // Loosely-timed temporal-decoupling keeper (null unless the data path uses
+    // one, i.e. the TLM flavour). The engine does NOT generate time; the memories
+    // ACCOUNT their data-availability delays into it, and the engine only FLUSHES
+    // (sync) that accumulated real delay at its re-arbitration synchronization
+    // point -- where it must observe the latest register state (CPU channel arming).
+    fw_quantum_keeper qk;
 
     // Edge ports.
     fw_port #(wb_proto_if #(32, 32)) mif0, mif1;   // WISHBONE IF0 / IF1 masters (data)
@@ -78,7 +84,13 @@ class wb_dma_de extends fw_component implements fw_runnable;
 
         // `fw_trace_loop_begin("service")           // one iteration per arbitration round
         forever begin
-            automatic int c = next();
+            automatic int c;
+            // Flush accumulated data-availability delays BEFORE re-arbitrating, so
+            // the engine observes the latest register state (the CPU's channel
+            // arming) at this synchronization point. This is NOT time generation:
+            // the flushed time IS the sum of the just-serviced chunk's data delays.
+            if (qk != null) qk.sync();
+            c = next();
             // `fw_trace_point_begin("arb")          // outcome of this round
               // `fw_trace_param_int(c)              //   winner (-1 == nothing ready)
               // `fw_trace_param_int(last_ch)        //   round-robin pointer
@@ -163,6 +175,11 @@ class wb_dma_de extends fw_component implements fw_runnable;
 
         n = (sz.chk_sz == 0) ? ch.w_rem : min2(int'(sz.chk_sz), ch.w_rem);
         ch.set_busy(1'b1);
+
+        // The engine NEVER advances time itself -- it is a pure data mover. All
+        // timing emerges from data-availability delays on the master access()
+        // calls (the memory / bus paces each word). Those delays are quantum-
+        // decoupled on the TLM path (see wb_dma_mem), so the account is cheap.
 
         // `fw_trace_point_begin("plan")                 // chunk parameters, resolved
           // `fw_trace_param_int(n)                      //   words this chunk will move

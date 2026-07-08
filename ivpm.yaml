@@ -11,6 +11,14 @@ package:
       anonymous: true
     - name: fw-hdl
       url: https://github.com/featherweight-hdl/fw-hdl.git
+    - name: zuspec-be-bc
+      url: https://github.com/zuspec/zuspec-be-bc.git
+    - name: zuspec-rt-core
+      url: https://github.com/zuspec/zuspec-rt-core.git
+    - name: zuspec-rt-eng
+      url: https://github.com/zuspec/zuspec-rt-eng.git
+    - name: zuspec-be-sw
+      url: https://github.com/zuspec/zuspec-be-sw.git
     - name: fw-proto-wb
       url: https://github.com/featherweight-ip/fw-proto-wb.git
 

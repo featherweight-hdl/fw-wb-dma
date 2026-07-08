@@ -14,6 +14,7 @@
 //       dfm run fw-wb-dma.perf -- +NW=4000 +ITERS=2000 +CHUNK=16
 // ======================================================================
 `include "fw_hdl_macros.svh"
+`include "wb_dma_spl_macros.svh"     // FW_WB_PROTO_IMP (Wishbone-access provider)
 
 module wb_dma_perf_tb;
     import fw_hdl_pkg::*;
@@ -35,20 +36,24 @@ module wb_dma_perf_tb;
     localparam addr_t CH0_ADR0 = 32'h28;   // source       (IF0)
     localparam addr_t CH0_ADR1 = 32'h30;   // destination  (IF1)
 
-    // ---- dense O(1) fw_mem_if memory ----------------------------------------
+    // ---- dense O(1) wb_proto_if memory ---------------------------------------
+    // Provides the engine's Wishbone access() boundary directly (same seam the
+    // model's master ports drive), backed by a dense array so the wall-clock time
+    // reflects the engine, not the memory model.
     class dense_mem extends fw_component;
         data_t arr[];
-        `FW_MEM_IMP(addr_t, data_t, strb_t, dense_mem, m);
+        `FW_WB_PROTO_IMP(32, 32, dense_mem, m);
         function new(string name, fw_component parent, int n);
             super.new(name, parent);
             arr = new[n];
         endfunction
         function void build(); m = new(this); endfunction
-        virtual task m_write(output bit err, input addr_t a, input data_t d, input strb_t s);
-            arr[a>>2] = d; err = 1'b0;
-        endtask
-        virtual task m_read(output data_t d, output bit err, input addr_t a);
-            d = arr[a>>2]; err = 1'b0;
+        virtual task m_access(input  logic [31:0] adr, input logic [31:0] dat_w,
+                              input  logic [3:0]  sel, input bit          we,
+                              output logic [31:0] dat_r, output bit        err);
+            if (we) begin arr[adr>>2] = dat_w; dat_r = 32'h0; end
+            else          dat_r = arr[adr>>2];
+            err = 1'b0;
         endtask
     endclass
 
@@ -65,32 +70,32 @@ module wb_dma_perf_tb;
 
     // ---- driver: program once, then re-arm ITERS times, timing the loop ------
     class perf_cpu extends fw_component implements fw_runnable;
-        fw_port #(fw_mem_if #(addr_t, data_t, strb_t)) regs;   // -> rf.host
+        fw_port #(wb_proto_if #(32, 32)) regs;   // -> rf.host
         function new(string name, fw_component parent);
             super.new(name, parent); parent.add_runnable(this);
         endfunction
         function void build(); regs = new("regs", this); endfunction
 
         virtual task run();
-            fw_mem_if #(addr_t, data_t, strb_t) rf = regs.get_if();
+            wb_proto_if #(32, 32) rf = regs.get_if();
             automatic bit    err;
-            automatic data_t csr;
+            automatic data_t csr, rdr;
             // CSR: ch_en(0) | dst_sel=IF1(1) | inc_dst(3) | inc_src(4)
             automatic data_t CSR_GO = (1<<0)|(1<<1)|(1<<3)|(1<<4);
 
             // Addresses + size programmed once; re-arming reloads from them.
-            rf.write(err, CH0_ADR0, 32'h0, 4'hf);
-            rf.write(err, CH0_ADR1, 32'h0, 4'hf);
-            rf.write(err, CH0_SZ, (CHUNK << 16) | NW, 4'hf);
+            rf.access(CH0_ADR0, 32'h0, 4'hf, 1'b1, rdr, err);
+            rf.access(CH0_ADR1, 32'h0, 4'hf, 1'b1, rdr, err);
+            rf.access(CH0_SZ, (CHUNK << 16) | NW, 4'hf, 1'b1, rdr, err);
 
             $display("[perf] start: %0d transfers x %0d words (chunk=%0d) = %0d words",
                      ITERS, NW, CHUNK, ITERS*NW);
 
             for (int t = 0; t < ITERS; t++) begin
-                rf.write(err, CH0_CSR, CSR_GO, 4'hf);          // arm
+                rf.access(CH0_CSR, CSR_GO, 4'hf, 1'b1, rdr, err);   // arm
                 do begin
                     #1;
-                    rf.read(csr, err, CH0_CSR);
+                    rf.access(CH0_CSR, 32'h0, 4'hf, 1'b0, csr, err);
                 end while (!csr[11]);                          // wait DONE
             end
 

@@ -1,9 +1,17 @@
-// ---- wb_proto_if memory with an optional per-access delay + backdoor ------
-// `delay` models slave wait-states (the reference's s0.delay / s1.delay). The
-// engine's master ports (de.mif0/mif1) connect here and drive access() calls.
+// ---- wb_proto_if memory with a per-access DATA-AVAILABILITY delay + backdoor -
+// The access latency (7ns + optional `delay` wait-states) is the model's ONLY
+// time source -- the engine is a pure data mover and never advances time itself;
+// its execution time emerges from waiting here for data to be available.
+// On the TLM path a `fw_quantum_keeper` is seated (qk != null): the latency is
+// ACCOUNTED (accumulated) rather than yielded per access, so a 256-word transfer
+// costs ~one scheduler yield per quantum instead of 512 -- loosely-timed temporal
+// decoupling. On the signal paths qk is null and the latency is a real #delay
+// (part of the Wishbone slave's response timing). The engine's master ports
+// (de.mif0/mif1) drive access().
 class wb_dma_mem extends fw_component;
-    logic [31:0]  mem [logic [31:0]];
-    int unsigned  delay = 0;        // extra ns per access (wait-states)
+    logic [31:0]      mem [logic [31:0]];
+    int unsigned      delay = 0;    // extra ns per access (slave wait-states)
+    fw_quantum_keeper qk;           // TLM temporal-decoupling keeper (null on signal paths)
     `FW_WB_PROTO_IMP(32, 32, wb_dma_mem, m);
 
     function new(string name, fw_component parent); super.new(name, parent); endfunction
@@ -12,7 +20,10 @@ class wb_dma_mem extends fw_component;
     virtual task m_access(input  logic [31:0] adr, input logic [31:0] dat_w,
                           input  logic [3:0]  sel, input bit          we,
                           output logic [31:0] dat_r, output bit        err);
-        #((7 + delay) * 1ns);
+        // Data-availability delay: batched via the quantum keeper on TLM, a real
+        // #delay on the signal paths (where the bus is cycle-accurate).
+        if (qk != null) qk.account((7 + delay) * 1ns);
+        else            #((7 + delay) * 1ns);
         if (we) begin mem[adr] = dat_w; dat_r = 32'h0; end
         else          dat_r = mem.exists(adr) ? mem[adr] : 32'h0;
         err = 1'b0;
