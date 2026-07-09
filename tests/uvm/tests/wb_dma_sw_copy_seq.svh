@@ -11,10 +11,9 @@ class wb_dma_sw_copy_seq extends wb_dma_base_seq;
 
     task body();
         logic [31:0] v;
-        wb_dma_mem   srcm = model.mem(src_sel);
 
         model.irqc.reset();
-        srcm.fill(SRC_BASE, tot, 16'hC0DE);
+        preload(src_sel, SRC_BASE, tot, 16'hC0DE);   // fan out to DUT + reference
 
         reg_write(int_bank ? REG_INT_MASKB : REG_INT_MASKA, 32'hffff_ffff);
         reg_write(CH_TXSZ(0), mk_sz(chunk, tot));

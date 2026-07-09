@@ -14,9 +14,11 @@ class wb_dma_base_test extends uvm_test;
     endfunction
 
     function void report_phase(uvm_phase phase);
-        if (env.sb.errors == 0)
+        int unsigned errs = env.sb.errors + env.cmp.errors;
+        if (errs == 0)
             `uvm_info("RESULT", "** TEST PASSED **", UVM_LOW)
         else
-            `uvm_error("RESULT", $sformatf("** TEST FAILED (%0d errors) **", env.sb.errors))
+            `uvm_error("RESULT", $sformatf("** TEST FAILED (%0d errors: sb=%0d cmp=%0d) **",
+                                           errs, env.sb.errors, env.cmp.errors))
     endfunction
 endclass

@@ -6,8 +6,35 @@
 class wb_dma_base_seq extends uvm_sequence #(fwvip_wb_transaction);
     `uvm_object_utils(wb_dma_base_seq)
     wb_dma_model_base model;     // set by the test before start (backdoor access)
+    wb_dma_ref_model  ref_model; // always-on reference (fetched lazily; null if absent)
 
     function new(string name = "wb_dma_base_seq"); super.new(name); endfunction
+
+    // Lazily resolve the reference model published by the top. Sequences that
+    // preload source memory fan the fill out to it so the reference computes the
+    // same copy (the source pattern is a backdoor fill, not a register write, so
+    // it is not covered by the register tee/forward).
+    function void ensure_ref();
+        if (ref_model == null)
+            void'(uvm_config_db #(wb_dma_ref_model)::get(null, "", "ref_model", ref_model));
+    endfunction
+
+    // Preload `count` words at `base` in memory `sel` of BOTH the DUT and the
+    // reference with the identical deterministic pattern -- so their source data
+    // (and therefore their predicted copies) agree.
+    function void preload(bit sel, logic [31:0] base, int count, logic [15:0] seed);
+        ensure_ref();
+        model.mem(sel).fill(base, count, seed);
+        if (ref_model != null) ref_model.mem(sel).fill(base, count, seed);
+    endfunction
+
+    // Arm an injected bus error at `addr` in memory `sel` on BOTH the DUT and the
+    // reference, so both engines abort at the identical beat (P7 error scenario).
+    function void inject_err(bit sel, logic [31:0] addr);
+        ensure_ref();
+        model.mem(sel).inject_err(addr);
+        if (ref_model != null) ref_model.mem(sel).inject_err(addr);
+    endfunction
 
     task reg_write(logic [31:0] addr, logic [31:0] data);
         fwvip_wb_transaction t = fwvip_wb_transaction::type_id::create("t");
@@ -47,7 +74,13 @@ class wb_dma_base_seq extends uvm_sequence #(fwvip_wb_transaction);
     task ack_int(logic [31:0] srcbits);
         logic [31:0] d;
         for (int c = 0; c < 31; c++)
-            if (srcbits[c]) reg_read(CH_CSR(c), d);
+            if (srcbits[c]) begin
+                reg_read(CH_CSR(c), d);
+                // The CH_CSR read cleared the interrupt AND carries the err/done
+                // status -- classify the completion cause (cause-aware, unlike the
+                // cause-blind INT_SRC). No-op on the TLM model (engine-fed irqc).
+                model.note_ch_status(c, d);
+            end
     endtask
 
     // Wait until `mask` bits are set in the given INT_SRC register, then ack the

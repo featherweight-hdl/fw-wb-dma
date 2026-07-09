@@ -61,6 +61,23 @@ module hdl_top_spl_wb;
     // GPIO monitor tapping the interrupt pins {intb_o, inta_o} (bit0=inta, bit1=intb).
     gpio_monitor_xtor #(.WIDTH(2)) u_mon_int (.clock(clk), .reset(rst), .gpio_i({intb, inta}));
 
+    // ---- passive Wishbone monitors for SPL<->DUT comparison ------------------
+    // Two on the DUT master buses (WB0/WB1 data movement) feed the comparator's
+    // DUT side; one on the WB0-slave (register) bus replays the program into the
+    // reference. All are read-only taps (the monitor drives nothing).
+    wb_monitor_xtor #(.ADDR_WIDTH(32), .DATA_WIDTH(32)) u_mon_m0 (
+        .clock(clk), .reset(rst),
+        .adr(m0_adr), .dat_w(m0_dat_w), .dat_r(m0_dat_r),
+        .cyc(m0_cyc), .stb(m0_stb), .sel(m0_sel), .we(m0_we), .ack(m0_ack), .err(m0_err));
+    wb_monitor_xtor #(.ADDR_WIDTH(32), .DATA_WIDTH(32)) u_mon_m1 (
+        .clock(clk), .reset(rst),
+        .adr(m1_adr), .dat_w(m1_dat_w), .dat_r(m1_dat_r),
+        .cyc(m1_cyc), .stb(m1_stb), .sel(m1_sel), .we(m1_we), .ack(m1_ack), .err(m1_err));
+    wb_monitor_xtor #(.ADDR_WIDTH(32), .DATA_WIDTH(32)) u_mon_reg (
+        .clock(clk), .reset(rst),
+        .adr(h_adr), .dat_w(h_dat_w), .dat_r(h_dat_r),
+        .cyc(h_cyc), .stb(h_stb), .sel(h_sel), .we(h_we), .ack(h_ack), .err(h_err));
+
     // Clock domain for the bus-side model tree.
     fw_clock_xtor_if u_clk(.clock(clk), .reset(rst));
 endmodule

@@ -20,6 +20,7 @@ module hvl_top_rtl;
     import fwvip_wb_pkg::*;
     import fwvip_gpio_pkg::*;
     import wb_dma_model_pkg::*;
+    import wb_dma_ref_model_pkg::*;
     import wb_dma_wb_model_pkg::*;
     import wb_dma_rtl_model_pkg::*;
     import wb_dma_uvm_pkg::*;
@@ -31,9 +32,14 @@ module hvl_top_rtl;
     // Wall-clock (real seconds) at startup / finish -- for throughput measurement.
     real wc_start;
 
+    // Always-on passive SPL reference (a TLM model), elaborated for functional runs.
+    fw_component_root #(wb_dma_ref_model) refroot;
+
     initial begin
         automatic fw_component_root #(wb_dma_rtl_model) root = new("root");
         automatic fw_clock_xtor_bridge clk_dom;
+        automatic fw_clock_xtor_bridge ref_clk;
+        automatic bit perf = $test$plusargs("PERF");
         wc_start = wc_now();
         $display("[PERF] %m START  wallclock=%0.3f s", wc_start);
         // Seat the host initiator vif + the two RAM vifs before start().
@@ -44,6 +50,22 @@ module hvl_top_rtl;
         root.clock.connect(clk_dom);         // seat the root clock domain
         root.start();                        // build -> connect -> run
         // No memory-service fork: the wb_ram_slv RAMs serve the master ports directly.
+
+        // Always-on passive SPL reference (skipped for perf: 2x work skews it). This
+        // is the real cross-abstraction check -- SPL model vs OpenCores RTL.
+        if (!perf) begin
+            refroot = new("refroot");
+            ref_clk = new("ref_clock", refroot, hdl_top_rtl.u_clk);
+            refroot.clock.connect(ref_clk);
+            refroot.start();
+            uvm_config_db #(wb_dma_ref_model)::set(null, "*", "ref_model", refroot);
+            fwvip_wb_monitor_config_p #(virtual wb_monitor_xtor_if #(32, 32))::set(
+                null, "uvm_test_top.env.m_mon_m0*",  "cfg", hdl_top_rtl.u_mon_m0.u_if);
+            fwvip_wb_monitor_config_p #(virtual wb_monitor_xtor_if #(32, 32))::set(
+                null, "uvm_test_top.env.m_mon_m1*",  "cfg", hdl_top_rtl.u_mon_m1.u_if);
+            fwvip_wb_monitor_config_p #(virtual wb_monitor_xtor_if #(32, 32))::set(
+                null, "uvm_test_top.env.m_mon_reg*", "cfg", hdl_top_rtl.u_mon_reg.u_if);
+        end
 
         // Bind the interrupt-pin GPIO monitor + swap in the GPIO-augmented env.
         `fwvip_gpio_monitor_register(2, hdl_top_rtl.u_mon_int.u_if, "uvm_test_top.env.m_int*")

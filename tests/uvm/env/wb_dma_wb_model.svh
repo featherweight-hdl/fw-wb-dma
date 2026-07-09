@@ -27,14 +27,13 @@ class wb_dma_wb_model extends wb_dma_model_base;
     // Register BFM: the host initiator bridge IS the wb_proto_if into WB0 slave.
     virtual function wb_dma_mem_if_t rf_if(); return hbr; endfunction
 
-    // Bus-observed interrupts: INT_SRC_A/B bits are the done channels (only
-    // done interrupts are enabled in the WB-path scenarios). Read-clear means
-    // each channel appears once, so record every set bit as a completion.
-    virtual function void note_int_src(bit bank, logic [31:0] data);
-        for (int i = 0; i < 31; i++)
-            if (data[i]) begin
-                irqc.done_order.push_back(i);
-                irqc.n_done++;
-            end
+    // Completion reconstruction is cause-aware and done from the channel CSR
+    // (note_ch_status), NOT the cause-blind INT_SRC snapshot -- an error and a
+    // done set the SAME INT_SRC bit, so INT_SRC alone cannot tell them apart.
+    // The ISR reads CH_CSR to clear each interrupt anyway; that read carries the
+    // err/done status bits used here. (note_int_src stays the base no-op.)
+    virtual function void note_ch_status(int c, logic [31:0] csr);
+        if      (csr[12]) irqc.n_err++;                                  // err status
+        else if (csr[11]) begin irqc.done_order.push_back(c); irqc.n_done++; end  // done status
     endfunction
 endclass

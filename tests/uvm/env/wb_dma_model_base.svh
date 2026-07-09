@@ -33,6 +33,15 @@ virtual class wb_dma_model_base extends fw_component
     // WB flavour overrides it to record done order/count from the read data.
     virtual function void note_int_src(bit bank, logic [31:0] data); endfunction
 
+    // Bus-observed CHANNEL-STATUS hook: called by the ISR after it reads a
+    // channel's CSR to clear the interrupt (the CSR carries the err/done STATUS
+    // bits INT_SRC lacks). The signal flavours override this to classify the
+    // completion cause -- INT_SRC is cause-blind (error and done set the same
+    // channel bit), so cause must be reconstructed from the CSR. Default no-op
+    // (the TLM model fills irqc from the engine's cause seam directly).
+    //   csr bit 12 = err (status: errored), bit 11 = done (status: complete)
+    virtual function void note_ch_status(int c, logic [31:0] csr); endfunction
+
     // --- interrupt-change seam ---
     virtual function void int_changed(bit inta, bit intb);
         m_int_level = {intb, inta};

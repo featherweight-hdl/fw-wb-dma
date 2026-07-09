@@ -22,6 +22,7 @@ package wb_dma_tests_pkg;
     // sequences
     `include "wb_dma_sw_copy_seq.svh"
     `include "wb_dma_arb_seq.svh"
+    `include "wb_dma_err_seq.svh"
     `include "wb_dma_hw_hs_seq.svh"
     `include "wb_dma_hol_seq.svh"
     `include "wb_dma_perf_seq.svh"
@@ -30,6 +31,8 @@ package wb_dma_tests_pkg;
     `include "wb_dma_base_test.svh"
     `include "wb_dma_sw_copy_test.svh"
     `include "wb_dma_arb_test.svh"
+    `include "wb_dma_arb_eq_test.svh"
+    `include "wb_dma_err_test.svh"
     `include "wb_dma_hw_hs_test.svh"
     `include "wb_dma_hol_test.svh"
     `include "wb_dma_perf_test.svh"

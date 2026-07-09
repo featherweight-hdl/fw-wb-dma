@@ -16,8 +16,11 @@ class wb_dma_arb_seq extends wb_dma_base_seq;
 
     task body();
         model.irqc.reset();
-        // Fill each channel's distinct source region (IF0 == s0).
-        foreach (prio[c]) model.s0.fill(src_base(c), tot, 16'(16'hB000 + c));
+        ensure_ref();
+        if (ref_model != null) ref_model.irqc.reset();   // reference completions start clean too
+        // Fill each channel's distinct source region (IF0 == s0), fanned out to
+        // the reference so it computes the same copies.
+        foreach (prio[c]) preload(1'b0, src_base(c), tot, 16'(16'hB000 + c));
 
         reg_write(REG_INT_MASKA, 32'hffff_ffff);
         // Program all channels' addresses/size first ...

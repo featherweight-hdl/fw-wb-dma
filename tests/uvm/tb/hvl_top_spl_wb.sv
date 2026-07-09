@@ -23,6 +23,7 @@ module hvl_top_spl_wb;
     import fwvip_wb_pkg::*;
     import fwvip_gpio_pkg::*;
     import wb_dma_model_pkg::*;
+    import wb_dma_ref_model_pkg::*;
     import wb_dma_wb_model_pkg::*;
     import wb_dma_uvm_pkg::*;
     import wb_dma_tests_pkg::*;
@@ -33,9 +34,14 @@ module hvl_top_spl_wb;
     // Wall-clock (real seconds) at startup / finish -- for throughput measurement.
     real wc_start;
 
+    // Always-on passive reference (a TLM model), elaborated for functional runs.
+    fw_component_root #(wb_dma_ref_model) refroot;
+
     initial begin
         automatic fw_component_root #(wb_dma_wb_model) root = new("root");
         automatic fw_clock_xtor_bridge clk_dom;
+        automatic fw_clock_xtor_bridge ref_clk;
+        automatic bit perf = $test$plusargs("PERF");
         wc_start = wc_now();
         $display("[PERF] %m START  wallclock=%0.3f s", wc_start);
         // Seat the host initiator vif before start() (build() needs vhost). The
@@ -44,6 +50,22 @@ module hvl_top_spl_wb;
         clk_dom = new("clock", root, hdl_top_spl_wb.u_clk);
         root.clock.connect(clk_dom);         // seat the root clock domain
         root.start();                        // build -> connect -> run
+
+        // Always-on passive reference (skipped for perf: 2x engine work skews it).
+        if (!perf) begin
+            refroot = new("refroot");
+            ref_clk = new("ref_clock", refroot, hdl_top_spl_wb.u_clk);
+            refroot.clock.connect(ref_clk);
+            refroot.start();
+            uvm_config_db #(wb_dma_ref_model)::set(null, "*", "ref_model", refroot);
+            // Seat the three comparison monitors' vifs (WB0/WB1 master + register).
+            fwvip_wb_monitor_config_p #(virtual wb_monitor_xtor_if #(32, 32))::set(
+                null, "uvm_test_top.env.m_mon_m0*",  "cfg", hdl_top_spl_wb.u_mon_m0.u_if);
+            fwvip_wb_monitor_config_p #(virtual wb_monitor_xtor_if #(32, 32))::set(
+                null, "uvm_test_top.env.m_mon_m1*",  "cfg", hdl_top_spl_wb.u_mon_m1.u_if);
+            fwvip_wb_monitor_config_p #(virtual wb_monitor_xtor_if #(32, 32))::set(
+                null, "uvm_test_top.env.m_mon_reg*", "cfg", hdl_top_spl_wb.u_mon_reg.u_if);
+        end
 
         // Bind the interrupt-pin GPIO monitor + swap in the WB-xtor env (GPIO
         // monitor + the two fwvip_wb_target memory agents).

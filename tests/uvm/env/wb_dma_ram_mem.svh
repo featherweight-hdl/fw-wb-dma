@@ -10,4 +10,9 @@ class wb_dma_ram_mem extends wb_dma_mem;
     virtual function logic [31:0] peek(logic [31:0] addr);
         return ram.peek(addr);
     endfunction
+    // Injected bus error lives in the RAM (the DUT masters into it directly), not
+    // the inherited wb_dma_mem responder.
+    virtual function void inject_err(logic [31:0] addr);
+        ram.inject_err(addr);
+    endfunction
 endclass

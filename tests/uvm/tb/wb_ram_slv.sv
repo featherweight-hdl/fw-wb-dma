@@ -25,22 +25,35 @@ interface wb_ram_slv #(
         input  wire            cyc,
         input  wire            stb,
         input  wire            we,
-        output wire            ack
+        output wire            ack,
+        output wire            err
     );
     localparam int IDXW = $clog2(WORDS);
 
     logic [DW-1:0]   mem [0:WORDS-1];
     wire  [IDXW-1:0] widx = adr[IDXW+1:2];   // word index (byte adr >> 2)
 
-    // Classic 0-wait-state target: ACK the same cycle CYC & STB are asserted,
-    // read data available combinationally.
-    assign ack   = cyc & stb;
+    // Error injection (P7): when armed, an access to err_addr terminates with
+    // ERR instead of ACK (and does not write) -- the DUT engine aborts. Set via
+    // the wb_dma_ram_mem backdoor so it fans out with the reference's memory.
+    bit          err_en = 1'b0;
+    logic [AW-1:0] err_addr;
+    wire         hit = err_en & (adr == err_addr);
+
+    // Classic 0-wait-state target: ACK the same cycle CYC & STB are asserted
+    // (unless the injected error hits, which asserts ERR instead), read data
+    // available combinationally.
+    assign ack   = cyc & stb & ~hit;
+    assign err   = cyc & stb &  hit;
     assign dat_r = mem[widx];
 
     always @(posedge clock)
-        if (cyc & stb & we)
+        if (cyc & stb & we & ~hit)
             for (int b = 0; b < DW/8; b++)
                 if (sel[b]) mem[widx][b*8 +: 8] <= dat_w[b*8 +: 8];
+
+    // Arm/replace the injected error address (backdoor, byte address).
+    function automatic void inject_err(logic [AW-1:0] a); err_en = 1'b1; err_addr = a; endfunction
 
     // Backdoor access (word address = byte address >> 2).
     function automatic void poke(logic [AW-1:0] a, logic [DW-1:0] d);

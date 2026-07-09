@@ -91,18 +91,40 @@ module hdl_top_rtl;
         .cyc(h_cyc), .stb(h_stb), .sel(h_sel), .we(h_we), .ack(h_ack), .err(h_err));
 
     // ---- data memories: combinational 0-wait-state WB RAMs on the master ports -
-    // (m*_err unused: the RAMs never signal ERR.)
+    // (m*_err driven by the RAMs' injected-error output, wired to the DUT's
+    // wb*_err_i so the error-injection scenario can abort a master access.)
     wb_ram_slv #(.AW(32), .DW(32)) u_ram0 (
         .clock(clk),
         .adr(m0_adr), .dat_w(m0_dat_w), .dat_r(m0_dat_r),
-        .sel(m0_sel), .cyc(m0_cyc), .stb(m0_stb), .we(m0_we), .ack(m0_ack));
+        .sel(m0_sel), .cyc(m0_cyc), .stb(m0_stb), .we(m0_we), .ack(m0_ack), .err(m0_err));
     wb_ram_slv #(.AW(32), .DW(32)) u_ram1 (
         .clock(clk),
         .adr(m1_adr), .dat_w(m1_dat_w), .dat_r(m1_dat_r),
-        .sel(m1_sel), .cyc(m1_cyc), .stb(m1_stb), .we(m1_we), .ack(m1_ack));
+        .sel(m1_sel), .cyc(m1_cyc), .stb(m1_stb), .we(m1_we), .ack(m1_ack), .err(m1_err));
 
     // GPIO monitor tapping the interrupt pins {intb_o, inta_o} (bit0=inta, bit1=intb).
     gpio_monitor_xtor #(.WIDTH(2)) u_mon_int (.clock(clk), .reset(rst), .gpio_i({intb, inta}));
+
+    // ---- passive Wishbone monitors for SPL<->RTL comparison ------------------
+    // Two on the DUT master buses (WB0/WB1 data movement into the RAMs) feed the
+    // comparator's DUT side; one on the WB0-slave (register) bus replays the
+    // program into the reference. Read-only taps on the same wires as the RAMs /
+    // host xtor -- the RTL's internal s/m data-name swap is invisible here.
+    // The RTL masters into 0-wait-state RAMs (one beat per cycle back-to-back);
+    // the FIFO-less monitor consumes one beat per cycle, so it keeps pace with no
+    // dropped beats and no buffering.
+    wb_monitor_xtor #(.ADDR_WIDTH(32), .DATA_WIDTH(32)) u_mon_m0 (
+        .clock(clk), .reset(rst),
+        .adr(m0_adr), .dat_w(m0_dat_w), .dat_r(m0_dat_r),
+        .cyc(m0_cyc), .stb(m0_stb), .sel(m0_sel), .we(m0_we), .ack(m0_ack), .err(m0_err));
+    wb_monitor_xtor #(.ADDR_WIDTH(32), .DATA_WIDTH(32)) u_mon_m1 (
+        .clock(clk), .reset(rst),
+        .adr(m1_adr), .dat_w(m1_dat_w), .dat_r(m1_dat_r),
+        .cyc(m1_cyc), .stb(m1_stb), .sel(m1_sel), .we(m1_we), .ack(m1_ack), .err(m1_err));
+    wb_monitor_xtor #(.ADDR_WIDTH(32), .DATA_WIDTH(32)) u_mon_reg (
+        .clock(clk), .reset(rst),
+        .adr(h_adr), .dat_w(h_dat_w), .dat_r(h_dat_r),
+        .cyc(h_cyc), .stb(h_stb), .sel(h_sel), .we(h_we), .ack(h_ack), .err(h_err));
 
     // Clock domain for the bus-side model tree.
     fw_clock_xtor_if u_clk(.clock(clk), .reset(rst));

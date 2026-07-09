@@ -25,6 +25,7 @@ package wb_dma_wb_model_pkg;
     import fw_proto_wb_pkg::*;         // wb_proto_if, xtor bridges, wb_mem_* adapters
     import wb_dma_model_pkg::*;        // base + wb_dma_mem + wb_dma_irq_collector
     import uvm_pkg::*;
+    import wb_dma_ref_model_pkg::*;    // wb_dma_ref_model (comparison reference)
     import wb_dma_uvm_pkg::*;          // wb_dma_env / wb_dma_scoreboard
     import fwvip_gpio_pkg::*;          // fwvip_gpio_monitor + fwvip_gpio_transaction
     import fwvip_wb_pkg::*;            // fwvip_wb_target agent + fwvip_wb_target_config_ap

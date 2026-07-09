@@ -23,7 +23,9 @@
 
 package wb_dma_uvm_pkg;
     import uvm_pkg::*;
+    import fw_proto_wb_pkg::*;      // wb_proto_if (register-access seam / reg tee)
     import wb_dma_model_pkg::*;
+    import wb_dma_ref_model_pkg::*; // always-on reference (wb_dma_ref_model, wb_dma_xact)
     import fwvip_wb_pkg::*;         // fwvip_wb_initiator agent + config + transaction
 
     // Wall-clock seconds from /proc/uptime (monotonic since boot, ~10 ms
@@ -78,6 +80,10 @@ package wb_dma_uvm_pkg;
     // item/driver/agent were retired now that the model's register port is a
     // native wb_proto_if the fwvip config binds to (see wb_dma_env / base_seq).
     `include "wb_dma_scoreboard.svh"
+    `include "wb_dma_reg_tee.svh"
+    `include "wb_dma_comparator.svh"
+    `include "wb_dma_mon_adapter.svh"
+    `include "wb_dma_reg_forward.svh"
     `include "wb_dma_env.svh"
     `include "wb_dma_base_seq.svh"
 endpackage

@@ -18,6 +18,7 @@ fragment:
       incdirs: [".", "env"]      # 'env' so the per-class .svh includes resolve
       include:
       - wb_dma_model_pkg.sv
+      - wb_dma_ref_model_pkg.sv   # always-on passive reference (taps + xact record)
       - wb_dma_uvm_pkg.sv
 
   - name: uvm-test-src
@@ -86,6 +87,24 @@ fragment:
     with:
       plusargs:
       - UVM_TESTNAME=wb_dma_arb_test
+      - CMP_BY_CHANNEL   # multi-channel: channel-keyed cross-compare (disjoint windows)
+
+  - root: uvm-wb-arbeq
+    uses: hdlsim.vlt.SimRun
+    needs: [uvm-wb-img]
+    with:
+      plusargs:
+      - UVM_TESTNAME=wb_dma_arb_eq_test
+      - CMP_BY_CHANNEL
+      - CMP_NO_ORDER
+
+  - root: uvm-wb-err
+    uses: hdlsim.vlt.SimRun
+    needs: [uvm-wb-img]
+    with:
+      plusargs:
+      - UVM_TESTNAME=wb_dma_err_test
+      - CMP_BY_CHANNEL
 
   # ---- Signal-level (Wishbone) UVM path: same env+tests, wb_dma_top RTL DUT -----
   # Reuses the host register path + GPIO->int_changed seam from the WB model, but
@@ -146,6 +165,24 @@ fragment:
     with:
       plusargs:
       - UVM_TESTNAME=wb_dma_arb_test
+      - CMP_BY_CHANNEL   # multi-channel: channel-keyed cross-compare (disjoint windows)
+
+  - root: uvm-rtl-arbeq
+    uses: hdlsim.vlt.SimRun
+    needs: [uvm-rtl-img]
+    with:
+      plusargs:
+      - UVM_TESTNAME=wb_dma_arb_eq_test
+      - CMP_BY_CHANNEL
+      - CMP_NO_ORDER
+
+  - root: uvm-rtl-err
+    uses: hdlsim.vlt.SimRun
+    needs: [uvm-rtl-img]
+    with:
+      plusargs:
+      - UVM_TESTNAME=wb_dma_err_test
+      - CMP_BY_CHANNEL
 
   # ---- throughput benchmark: same wb_dma_perf_test on all three DUT flavours ----
   # Wall-clock-bounded (runs >= PERF_SECS); +PERF disables the sim-time watchdog.
@@ -176,12 +213,37 @@ fragment:
       plusargs:
       - UVM_TESTNAME=wb_dma_sw_copy_test
 
+  # arb: multi-channel cross-comparison ON, channel-keyed (+CMP_BY_CHANNEL). The
+  # arb scenario programs disjoint per-channel windows, so address attribution is
+  # exact. hwhs/hol stay +NO_CMP (HS handshake excluded, strategy 7.11).
   - root: uvm-arb
     uses: hdlsim.vlt.SimRun
     needs: [uvm-img]
     with:
       plusargs:
       - UVM_TESTNAME=wb_dma_arb_test
+      - CMP_BY_CHANNEL
+
+  # equal-priority round-robin: per-channel streams + done COUNT compared, order
+  # NOT (scheduling freedom) -> +CMP_NO_ORDER.
+  - root: uvm-arbeq
+    uses: hdlsim.vlt.SimRun
+    needs: [uvm-img]
+    with:
+      plusargs:
+      - UVM_TESTNAME=wb_dma_arb_eq_test
+      - CMP_BY_CHANNEL
+      - CMP_NO_ORDER
+
+  # error injection: single channel, single run (stable window) -> channel-keyed
+  # so n_done/n_err are cross-compared alongside the master streams.
+  - root: uvm-err
+    uses: hdlsim.vlt.SimRun
+    needs: [uvm-img]
+    with:
+      plusargs:
+      - UVM_TESTNAME=wb_dma_err_test
+      - CMP_BY_CHANNEL
 
   - root: uvm-hwhs
     uses: hdlsim.vlt.SimRun
@@ -189,6 +251,7 @@ fragment:
     with:
       plusargs:
       - UVM_TESTNAME=wb_dma_hw_hs_test
+      - NO_CMP
 
   - root: uvm-hol
     uses: hdlsim.vlt.SimRun
@@ -196,3 +259,4 @@ fragment:
     with:
       plusargs:
       - UVM_TESTNAME=wb_dma_hol_test
+      - NO_CMP
